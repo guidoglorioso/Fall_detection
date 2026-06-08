@@ -133,9 +133,11 @@ weights/
 # --- CONFIGURACIÓN REQUERIDA POR EL USUARIO: Exclusión Absoluta de Outputs ---
 # Bloquea explícitamente cualquier carpeta destinada a almacenar resultados,
 # métricas, gráficos, predicciones, artefactos o reportes.
-output/
 Datasets/
 Coeficientes/
+Notebooks_tf/
+
+output/
 outputs/
 output_data/
 results/

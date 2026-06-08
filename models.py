@@ -182,6 +182,7 @@ class Autoencoder(Model):
                 # Verificación de seguridad: asegurarnos de que tenemos ambos
                 if nuevos_pesos[0] is not None and nuevos_pesos[1] is not None:
                     capa.set_weights(nuevos_pesos)
+                   
                     print(f" [+] Coeficientes cargados con éxito en la capa: {capa.name}")
                     capas_actualizadas += 1
                 else:
