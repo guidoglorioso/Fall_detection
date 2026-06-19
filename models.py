@@ -36,12 +36,12 @@ class Autoencoder(Model):
                             strides= None,
                             padding= 'same'),
 
-        layers.Conv2D(filters=32, 
-                      kernel_size = (3, 1), 
-                      activation='relu', 
-                      padding='valid', 
-                      strides=1,
-                      name="CONV2_32"),
+            layers.Conv2D(filters=32, 
+                        kernel_size = (3, 1), 
+                        activation='relu', 
+                        padding='valid', 
+                        strides=1,
+                        name="CONV2_32"),
         
         layers.MaxPooling2D(pool_size=(2,1),
                         strides= None,
@@ -199,8 +199,12 @@ class NN(Model):
 
         self.modelNN = tf.keras.Sequential([
                 layers.Flatten(input_shape=(62, 1, 128)),
-                layers.Dense(10, activation = 'relu', kernel_regularizer = regularizers.L2(0.01)),
-                layers.Dense(4, activation = 'relu', kernel_regularizer = regularizers.L2(0.01)),
+                #layers.BatchNormalization(),
+                #layers.Dense(10, activation = 'relu', kernel_regularizer = regularizers.L2(0.01)),
+                layers.BatchNormalization(),
+                layers.Dense(2, activation = 'relu', kernel_regularizer = regularizers.L2(0.01)), ## 4 van mejor
+                layers.Dropout(0.5),
+                layers.BatchNormalization(),
                 layers.Dense(units=1,activation="sigmoid", kernel_regularizer = regularizers.L2(0.01)),
         ])
 

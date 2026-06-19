@@ -3,9 +3,11 @@ import glob
 import os
 import pandas as pd
 import numpy as np
-
+import re
 import matplotlib.pyplot as plt
-from sklearn.metrics import classification_report, confusion_matrix
+from matplotlib.ticker import MaxNLocator
+
+from sklearn.metrics import classification_report, confusion_matrix, roc_curve, auc
 from sklearn.preprocessing import StandardScaler
 ## Levanto el dataset (unicamente los datos de acelerometro)
 
@@ -47,7 +49,19 @@ def extraer_datos_csv(path, file, sensors):
         data.append(sensores)
 
     return np.array(data)
-    
+
+def extraer_actividad(texto):
+    patron = r"^EVENT:\s*(.+)$"
+
+    resultado = re.search(patron, texto, re.MULTILINE)
+
+    if resultado:
+        # .group(1) te devuelve solo lo que está dentro de los paréntesis
+        evento_extraido = resultado.group(1).strip()
+        return evento_extraido
+    else:
+        return "No Activity name"
+
 def extraer_tags_csv(path, file):
 
     patron_archivos = os.path.join(path, file)
@@ -56,22 +70,28 @@ def extraer_tags_csv(path, file):
     lista_archivos = sorted(glob.glob(patron_archivos))
 
     tags = []
-
+    activity = []
     for archivo in lista_archivos:
     
         with open(archivo, 'r') as file:
             encabezado = [next(file).strip() for _ in range(5)]  
+            
             for e in encabezado:
+                if "EVENT" in e:
+                     activity.append(extraer_actividad(e)) 
                 if "TYPE" not in e:
                     continue
-
+                
                 if "NOT FALL" in e :
                     tags.append(0)
                 elif "FALL" in e:
                     tags.append(1)
                 else:
                     print(f"No se dectecto el TAG del dato en el archivo: {archivo}. ")
-    return np.array(tags)
+
+                
+                
+    return np.array(tags),activity
 
 class dataScaler:
     def __init__(self):
@@ -143,25 +163,85 @@ def plot_stats(history):
     
     return fig
 
-def model_perfom(model,dataset,tags, threshold = 0.5):
+def matriz_confusion(tags,y_pred, verbose = 1): 
+        # Calculamos la matriz de confusión global
+    matriz = confusion_matrix(tags, y_pred)
+    if verbose: 
+        print("\n=== MATRIZ DE CONFUSIÓN ===")
+        print("                  Predice NO CAÍDA   Predice CAÍDA")
+        print(f"Real NO CAÍDA:    {matriz[0][0]}                 {matriz[0][1]}")
+        print(f"Real CAÍDA:       {matriz[1][0]}                 {matriz[1][1]}")
+    return matriz    
+
+
+def model_perfom(model, dataset, tags, threshold = 0.5, activity_names = None):
     
     y_pred_prob = model.predict(dataset)
-
-
     y_pred = (y_pred_prob > threshold).astype(int)
 
+    stats_perfom(y_pred, tags, activity_names)
+
+
+def stats_perfom(y_pred, tags , activity_names) : 
+    
+
+    tags = np.array(tags).flatten()
+    y_pred= y_pred.flatten()
+    
 
     print("=== REPORTE DE CLASIFICACIÓN ===")
     print(classification_report(tags, y_pred, target_names=["NOT FALL (0)", "FALL (1)"]))
 
-    # 4. Calculamos la matriz de confusión
-    matriz = confusion_matrix(tags, y_pred)
-    print("\n=== MATRIZ DE CONFUSIÓN ===")
-    print("                  Predice NO CAÍDA   Predice CAÍDA")
-    print(f"Real NO CAÍDA:    {matriz[0][0]}                 {matriz[0][1]}")
-    print(f"Real CAÍDA:       {matriz[1][0]}                 {matriz[1][1]}")
+    # Calculamos la matriz de confusión global
+    matriz_confusion(tags, y_pred)
+    
+    if activity_names is not None:
+        activity_names = np.array(activity_names)
+        
+        # Identificamos las máscaras de los errores
+        fp_mask = (tags == 0) & (y_pred == 1) # Falso Positivo (Azul)
+        fn_mask = (tags == 1) & (y_pred == 0) # Falso Negativo (Rojo)
+        
+        # Contamos cuántas veces ocurre cada error por actividad
+        unique_activities = np.unique(activity_names)
+        df_errores = pd.DataFrame(index=unique_activities)
+        
+        df_errores['Falso Positivo (Predijo Caída)'] = pd.Series(activity_names[fp_mask]).value_counts()
+        df_errores['Falso Negativo (Predijo No Caída)'] = pd.Series(activity_names[fn_mask]).value_counts()
+        
+        df_errores = df_errores.fillna(0)
+        
+        # --- NUEVO FILTRO ---
+        # Nos quedamos solo con las filas donde la suma de errores sea mayor a cero
+        df_errores = df_errores[(df_errores.iloc[:, 0] > 0) | (df_errores.iloc[:, 1] > 0)]
+        
+        # Si después del filtro no quedó ninguna actividad con errores, avisamos y no graficamos
+        if df_errores.empty:
+            print("\n¡Excelente! El modelo no cometió ningún error en ninguna actividad.")
+            return
 
-
+        # Graficamos
+        fig, ax = plt.subplots(figsize=(12, 6))
+        df_errores.plot(
+            kind='bar', 
+            color=['blue', 'red'], 
+            width=0.8,
+            ax=ax
+        )
+        
+        plt.title("Errores de Inferencia por Tipo de Actividad", fontsize=14, fontweight='bold')
+        plt.xlabel("Actividad", fontsize=12)
+        plt.ylabel("Cantidad de Eventos Erróneos", fontsize=12)
+        plt.xticks(rotation=45, ha='right')
+        plt.grid(axis='y', linestyle='--', alpha=0.7)
+        plt.legend(title="Tipo de Error")
+        
+        # --- EJE Y EN ENTEROS ---
+        # Forzamos a que los ticks del eje Y sean estrictamente números enteros
+        ax.yaxis.set_major_locator(MaxNLocator(integer=True))
+        
+        plt.tight_layout()
+        plt.show()
 
 ######### Extraccion de features para modelo de sensor barometrico
 
@@ -298,4 +378,50 @@ def extraer_features(señales):
     return matriz_features
 
 
+
+
+def graficar_distribucion_y_roc(y_reales, y_predichos_proba, bins=15):
+    """
+    Recibe etiquetas reales y probabilidades.
+    Plotea el histograma de distribución normalizado (densidad) y la Curva ROC.
+    """
+    # Sanitización de entradas a (n,)
+    y_reales = np.asarray(y_reales).ravel()
+    y_predichos_proba = np.asarray(y_predichos_proba).ravel()
     
+    # Separar las probabilidades
+    prob_clase_0 = y_predichos_proba[y_reales == 0]
+    prob_clase_1 = y_predichos_proba[y_reales == 1]
+    
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
+    
+    # --- GRÁFICO 1: Distribución NORMALIZADA ---
+    # density=True es la clave acá. Transforma el eje Y de "Conteo" a "Densidad"
+    ax1.hist([prob_clase_0, prob_clase_1], bins=bins, 
+             color=['#004b87', '#ea5814'], 
+             label=['No Caidas', 'Caidas'], 
+             edgecolor='white',
+             density=True)
+    
+    ax1.set_title('Distribución (Densidad)', fontsize=14, pad=15)
+    ax1.set_xlabel('Rangos (Probabilidad predicha)')
+    ax1.set_ylabel('Densidad (Proporción)')
+    ax1.legend(loc='upper center', bbox_to_anchor=(0.5, -0.15), ncol=2, frameon=False)
+    
+    # --- GRÁFICO 2: Curva ROC ---
+    fpr, tpr, umbrales = roc_curve(y_reales, y_predichos_proba)
+    roc_auc = auc(fpr, tpr)
+    
+    ax2.plot(fpr, tpr, color='#004b87', lw=3, label=f'AUC = {roc_auc:.2f}')
+    ax2.plot([0, 1], [0, 1], color='gray', lw=1, linestyle='--')
+    
+    ax2.set_title('Curva ROC', fontsize=14, pad=15)
+    ax2.set_xlabel('1-especificidad')
+    ax2.set_ylabel('sensibilidad')
+    ax2.set_xlim([0.0, 1.0])
+    ax2.set_ylim([0.0, 1.05])
+    ax2.legend(loc="lower right")
+    ax2.grid(alpha=0.3)
+    
+    plt.tight_layout()
+    plt.show()
