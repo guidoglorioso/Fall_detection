@@ -6,7 +6,8 @@ import numpy as np
 import re
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
-
+import seaborn as sns
+import matplotlib.patches as mpatches
 from sklearn.metrics import classification_report, confusion_matrix, roc_curve, auc
 from sklearn.preprocessing import StandardScaler
 ## Levanto el dataset (unicamente los datos de acelerometro)
@@ -173,7 +174,6 @@ def matriz_confusion(tags,y_pred, verbose = 1):
         print(f"Real CAÍDA:       {matriz[1][0]}                 {matriz[1][1]}")
     return matriz    
 
-
 def model_perfom(model, dataset, tags, threshold = 0.5, activity_names = None):
     
     y_pred_prob = model.predict(dataset)
@@ -181,65 +181,101 @@ def model_perfom(model, dataset, tags, threshold = 0.5, activity_names = None):
 
     stats_perfom(y_pred, tags, activity_names)
 
-
-def stats_perfom(y_pred, tags , activity_names) : 
-    
-
+def stats_perfom(y_pred, tags, activity_names=None): 
     tags = np.array(tags).flatten()
-    y_pred= y_pred.flatten()
-    
+    y_pred = y_pred.flatten()
 
     print("=== REPORTE DE CLASIFICACIÓN ===")
     print(classification_report(tags, y_pred, target_names=["NOT FALL (0)", "FALL (1)"]))
 
     # Calculamos la matriz de confusión global
     matriz_confusion(tags, y_pred)
+
+
+    # --- CÁLCULO DE MÉTRICAS GLOBALES SOBRE EL TOTAL ---
+    tn, fp, fn, tp = confusion_matrix(tags, y_pred).ravel()
     
+    total_positivos_reales = tp + fn
+    total_negativos_reales = tn + fp
+    
+    especificidad_global = tn / (tn + fp) if (tn + fp) > 0 else 0
+    sensibilidad_global = tp / (tp + fn) if total_positivos_reales > 0 else 0
+
     if activity_names is not None:
         activity_names = np.array(activity_names)
-        
-        # Identificamos las máscaras de los errores
-        fp_mask = (tags == 0) & (y_pred == 1) # Falso Positivo (Azul)
-        fn_mask = (tags == 1) & (y_pred == 0) # Falso Negativo (Rojo)
-        
-        # Contamos cuántas veces ocurre cada error por actividad
         unique_activities = np.unique(activity_names)
-        df_errores = pd.DataFrame(index=unique_activities)
         
-        df_errores['Falso Positivo (Predijo Caída)'] = pd.Series(activity_names[fp_mask]).value_counts()
-        df_errores['Falso Negativo (Predijo No Caída)'] = pd.Series(activity_names[fn_mask]).value_counts()
+        # --- RECOLECCIÓN DE ERRORES PARA LAS BARRAS ---
+        stats_list = []
+        for act in unique_activities:
+            mask = (activity_names == act)
+            t_act = tags[mask]
+            p_act = y_pred[mask]
+            
+            fp_act = np.sum((t_act == 0) & (p_act == 1))
+            fn_act = np.sum((t_act == 1) & (p_act == 0))
+            
+            stats_list.append({
+                'Actividad': act,
+                'Falso Positivo (Predijo Caída)': fp_act,
+                'Falso Negativo (Predijo No Caída)': fn_act
+            })
+            
+        df_stats = pd.DataFrame(stats_list)
         
-        df_errores = df_errores.fillna(0)
+        # FILTRO: Seleccionar solo las actividades que tienen algún FP o FN
+        df_errores = df_stats[(df_stats['Falso Positivo (Predijo Caída)'] > 0) | 
+                              (df_stats['Falso Negativo (Predijo No Caída)'] > 0)].copy()
         
-        # --- NUEVO FILTRO ---
-        # Nos quedamos solo con las filas donde la suma de errores sea mayor a cero
-        df_errores = df_errores[(df_errores.iloc[:, 0] > 0) | (df_errores.iloc[:, 1] > 0)]
-        
-        # Si después del filtro no quedó ninguna actividad con errores, avisamos y no graficamos
-        if df_errores.empty:
-            print("\n¡Excelente! El modelo no cometió ningún error en ninguna actividad.")
-            return
 
-        # Graficamos
-        fig, ax = plt.subplots(figsize=(12, 6))
-        df_errores.plot(
-            kind='bar', 
-            color=['blue', 'red'], 
-            width=0.8,
-            ax=ax
+        # --- DISEÑO DEL GRÁFICO ---
+        sns.set_theme(style="whitegrid", context="notebook")
+        
+        df_melted = df_errores.melt(
+            id_vars=['Actividad'], 
+            value_vars=['Falso Positivo (Predijo Caída)', 'Falso Negativo (Predijo No Caída)'],
+            var_name='Tipo de Error', 
+            value_name='Cantidad'
         )
         
-        plt.title("Errores de Inferencia por Tipo de Actividad", fontsize=14, fontweight='bold')
-        plt.xlabel("Actividad", fontsize=12)
-        plt.ylabel("Cantidad de Eventos Erróneos", fontsize=12)
-        plt.xticks(rotation=45, ha='right')
-        plt.grid(axis='y', linestyle='--', alpha=0.7)
-        plt.legend(title="Tipo de Error")
+        fig, ax = plt.subplots(figsize=(16, 8))
         
-        # --- EJE Y EN ENTEROS ---
-        # Forzamos a que los ticks del eje Y sean estrictamente números enteros
+        custom_palette = {
+            'Falso Positivo (Predijo Caída)': "#EA711C",      
+            'Falso Negativo (Predijo No Caída)': "#791414"    
+        }
+        
+        sns.barplot(
+            data=df_melted, x='Actividad', y='Cantidad', hue='Tipo de Error', 
+            palette=custom_palette, ax=ax, edgecolor='black', linewidth=0.8
+        )
+        
+        # Textos de ejes y título
+
+        plt.xlabel("Actividad", fontsize=13, labelpad=10)
+        plt.ylabel("Cantidad de Eventos", fontsize=13)
+        plt.xticks(rotation=45, ha='right', fontsize=11)
         ax.yaxis.set_major_locator(MaxNLocator(integer=True))
         
+        # --- UBICACIÓN DE LA LEYENDA UNIFICADA (DENTRO DEL GRÁFICO) ---
+        
+        # 1. Extraemos los handles de los colores
+        handles, _ = ax.get_legend_handles_labels()
+        
+        labels_nuevos = [
+            f'FP (Predijo Caída) -  ({tp} / {total_positivos_reales}) - Sensibilidad: {sensibilidad_global * 100:.2f}%',
+            f'FN (Predijo No Caída) - ({tn} / {total_negativos_reales}) - Especificidad: {especificidad_global * 100:.2f}%'
+        ]
+        
+        # 5. Dibujo la leyenda 
+        ax.legend(
+            handles=handles, labels=labels_nuevos, 
+            loc='upper right', 
+            title_fontsize='11', fontsize='10', 
+            frameon=True, shadow=True, labelspacing=1.3
+        )
+        
+        sns.despine()
         plt.tight_layout()
         plt.show()
 
@@ -358,6 +394,9 @@ def extraer_features(señales):
     
     # 10. percentil10
     f_percentil10 = np.percentile(señales, 10, axis=1)
+
+    # 11. Media
+    f_media = np.mean(señales, axis=1)
     
     # Agrupación en la matriz final de salida [numero_señales, 11]
     # np.column_stack toma arreglos 1D y los apila como columnas de una matriz 2D
@@ -372,7 +411,8 @@ def extraer_features(señales):
         f_curtosis,
         f_rms,
         f_percentil90,
-        f_percentil10
+        f_percentil10,
+        f_media
     ))
     
     return matriz_features

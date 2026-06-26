@@ -1,5 +1,7 @@
-## 
-# 
+##
+## Modelos de Autoencoder y NN para red convolucional siguiendo la estructura planteada en: FallAllD: An Open Dataset of Human Falls andActivities of Daily Living for Classical and DeepLearning Applications
+##
+
 
 import numpy as np
 import pandas as pd
@@ -167,7 +169,6 @@ class Autoencoder(Model):
             print(f"Error: No se encontró el archivo '{ruta_csv}'.")
             return
 
-        # 2. Inyectar los pesos reconstruidos en las capas del modelo
         capas_actualizadas = 0
         if enc_dec == 'encoder':
             layers = self.encoder.layers
@@ -199,12 +200,13 @@ class NN(Model):
 
         self.modelNN = tf.keras.Sequential([
                 layers.Flatten(input_shape=(62, 1, 128)),
+                layers.Dropout(0.5),
                 #layers.BatchNormalization(),
                 #layers.Dense(10, activation = 'relu', kernel_regularizer = regularizers.L2(0.01)),
-                layers.BatchNormalization(),
+                #layers.BatchNormalization(),
                 layers.Dense(2, activation = 'relu', kernel_regularizer = regularizers.L2(0.01)), ## 4 van mejor
                 layers.Dropout(0.5),
-                layers.BatchNormalization(),
+                #layers.BatchNormalization(),
                 layers.Dense(units=1,activation="sigmoid", kernel_regularizer = regularizers.L2(0.01)),
         ])
 
