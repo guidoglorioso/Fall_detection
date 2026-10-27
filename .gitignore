@@ -1,145 +1,28 @@
-# --- Entornos Virtuales y Dependencias ---
+# Entorno virtual
 .venv/
 venv/
 env/
-ENV/
-env.bak/
-venv.bak/
-bin/
-lib/
-lib64/
-include/
-share/
-pyvenv.cfg
-pip-selfcheck.json
-poetry.lock
-Pipfile.lock
 
-# --- Caché de Python y Compilación ---
-**/__pycache__/
+# Caché de Python y compilación
+__pycache__/
 *.py[cod]
 *$py.class
-.pytest_cache/
-.tox/
-.nox/
-.coverage
-.coverage.*
-htmlcov/
-nosetests.xml
-coverage.xml
-*.mo
-*.pot
-.eggs/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
 
-# --- Jupyter Notebooks (Caché y Checkpoints) ---
-.ipynb_checkpoints
+# Jupyter Notebooks
+.ipynb_checkpoints/
 */.ipynb_checkpoints/*
-*.dirty
-# Descomentar si no deseas trackear el historial de ejecución de los notebooks
-# .nbsphinx_notebooks/
 
-
-*.csv
-*.tsv
-*.xlsx
-*.xls
-*.jsonl
-*.xml
-*.parquet
-*.feather
-*.hdf5
-*.h5
-*.pkl
-*.pickle
-*.npy
-*.npz
-*.mat
-*.dta
-*.sav
-*.sql
-*.sqlite
-*.db
-
-# Carpetas de datos explícitas
+# Datos y datasets (archivos pesados)
 data/
-datasets/
-raw_data/
-processed_data/
-interim_data/
-external_data/
-
-# --- Modelos y Checkpoints (Pesos pesados) ---
-*.pt
-*.pth
-*.pkl
-*.pickle
-*.joblib
-*.h5
-*.pb
-*.onnx
-*.tflit
-*.weights
-*.ckpt
-*.tensor
-*.model
-*.safetensors
-checkpoint/
-checkpoints/
-saved_models/
-weights/
-
-# --- CONFIGURACIÓN REQUERIDA POR EL USUARIO: Exclusión Absoluta de Outputs ---
-# Bloquea explícitamente cualquier carpeta destinada a almacenar resultados,
-# métricas, gráficos, predicciones, artefactos o reportes.
+Dataset/
 Datasets/
-Coeficientes/
-Notebooks_tf/
 
-output/
-outputs/
-output_data/
-results/
-predictions/
-plots/
-figures/
-charts/
-metrics/
-reports/
-artifacts/
-runs/
-mlflow/
-lightning_logs/
-wandb/
-.tensorboard/
-logs/
-*.log
-log.txt
-
-# --- Configuraciones Locales y Credenciales (Seguridad) ---
-.env
-.env.local
-.env.*
-.secrets
-credentials.json
-*.pem
-*.key
-.pypirc
-
-# --- Configuraciones de IDEs y OS ---
+# Archivos de sistema y configuraciones locales de IDEs
 .vscode/
 .idea/
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.swp
-*.swo
 .DS_Store
 Thumbs.db
 desktop.ini
-machine_learning.gitignore
-Mostrando machine_learning.gitignore.
+
+# Logs y archivos temporales
+*.log

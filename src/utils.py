@@ -1,3 +1,4 @@
+import json
 import csv
 import glob
 import os
@@ -93,6 +94,155 @@ def extraer_tags_csv(path, file):
                 
                 
     return np.array(tags),activity
+
+
+def _natural_sort_key(s):
+    return [int(text) if text.isdigit() else text.lower() for text in re.split(r'(\d+)', str(s))]
+
+def _buscar_sensor(timeseries, sensor_key):
+    """
+    Busca la clave del sensor en la estructura timeseries del JSON.
+    Retorna la lista de valores o None si no se encuentra.
+    """
+    if sensor_key in timeseries and isinstance(timeseries[sensor_key], list):
+        return timeseries[sensor_key]
+
+    for grupo, contenido in timeseries.items():
+        if isinstance(contenido, dict) and sensor_key in contenido:
+            return contenido[sensor_key]
+
+    return None
+
+def extraer_datos_json(path, file='*.json', sensors=None):
+    """
+    Carga eventos de series temporales en formato JSON, extrayendo las señales a partir
+    de sus claves exactas en el archivo, junto con las etiquetas (tags) y nombres de actividad.
+
+    Estructura JSON esperada:
+    {
+        "header": {
+            "type": "FALL" / "NOT FALL",
+            "event": "nombre_evento",
+            ...
+        },
+        "timeseries": {
+            "accelerometer": {
+                "data_acel_x": [...],
+                "data_acel_y": [...],
+                "data_acel_z": [...]
+            },
+            "altitud": {
+                "temp": [...],
+                "press": [...]
+            }
+        }
+    }
+
+    Parámetros:
+    -----------
+    path : str o Path
+        Ruta al directorio con archivos JSON, o ruta directa / patrón glob.
+    file : str, opcional (default='*.json')
+        Patrón de coincidencia si 'path' es un directorio (ej. '*.json', 'evento_*.json').
+    sensors : list de str o str, opcional
+        Claves exactas de las señales a extraer del JSON.
+        Ejemplos:
+        - ['data_acel_x', 'data_acel_y', 'data_acel_z']
+        - ['press', 'temp']
+        - 'accelerometer' (extrae todas las claves del grupo 'accelerometer')
+        - 'altitud' (extrae todas las claves del grupo 'altitud')
+        Si es None, se extraen las claves del acelerómetro por defecto (o las disponibles).
+
+    Retorna:
+    --------
+    data : np.ndarray
+        Matriz 3D de dimensiones (num_ejemplos, timesteps, num_sensores).
+    tags : np.ndarray
+        Vector 1D de enteros (0: No Caída, 1: Caída).
+    activity : list de str
+        Lista con el nombre del evento/actividad de cada archivo.
+    """
+    path_str = str(path)
+    if os.path.isdir(path_str):
+        patron_archivos = os.path.join(path_str, file)
+    else:
+        patron_archivos = path_str
+
+    lista_archivos = sorted(glob.glob(patron_archivos), key=_natural_sort_key)
+    if not lista_archivos:
+        raise FileNotFoundError(f"No se encontraron archivos JSON con el patrón: {patron_archivos}")
+
+    data = []
+    tags = []
+    activity = []
+
+    for archivo in lista_archivos:
+        with open(archivo, 'r', encoding='utf-8') as f:
+            contenido = json.load(f)
+
+        header = contenido.get('header', {})
+        timeseries = contenido.get('timeseries', {})
+
+        # 1. Determinar lista de claves a extraer
+        if sensors is None:
+            if 'accelerometer' in timeseries and 'altitud' not in timeseries:
+                resolved_sensors = list(timeseries['accelerometer'].keys())
+            elif 'altitud' in timeseries and 'accelerometer' not in timeseries:
+                resolved_sensors = list(timeseries['altitud'].keys())
+            elif 'accelerometer' in timeseries:
+                resolved_sensors = list(timeseries['accelerometer'].keys())
+            else:
+                resolved_sensors = [k for k, v in timeseries.items() if isinstance(v, list)]
+        elif isinstance(sensors, str):
+            if sensors in timeseries and isinstance(timeseries[sensors], dict):
+                resolved_sensors = list(timeseries[sensors].keys())
+            else:
+                resolved_sensors = [sensors]
+        else:
+            resolved_sensors = sensors
+
+        # 2. Extraer Tag (0: No Caída, 1: Caída)
+        tipo = str(header.get('type', '')).upper().strip()
+        if 'NOT' in tipo or 'NO' in tipo or tipo == '0':
+            tags.append(0)
+        elif 'FALL' in tipo or tipo == '1' or 'CAIDA' in tipo:
+            tags.append(1)
+        else:
+            val = int(tipo) if tipo.isdigit() else 0
+            tags.append(val)
+
+        # 3. Extraer Nombre de Actividad
+        act_name = header.get('event') or header.get('activity') or 'No Activity name'
+        activity.append(str(act_name).strip())
+
+        # 4. Extraer canales por sus claves en el JSON
+        canales = []
+        for sen in resolved_sensors:
+            vals = _buscar_sensor(timeseries, sen)
+            if vals is None:
+                claves_disp = []
+                for g, c in timeseries.items():
+                    if isinstance(c, dict):
+                        claves_disp.extend(c.keys())
+                    else:
+                        claves_disp.append(g)
+                raise KeyError(f"La clave '{sen}' no se encontró en {archivo}. Claves disponibles: {claves_disp}")
+            canales.append(np.array(vals, dtype=np.float32))
+
+        # 5. Validar que las señales tengan la misma longitud
+        longitudes = [len(c) for c in canales]
+        if len(set(longitudes)) > 1:
+            raise ValueError(
+                f"Las señales solicitadas tienen diferentes longitudes {dict(zip(resolved_sensors, longitudes))} en {archivo}. "
+                f"Asegúrese de solicitar sensores de la misma serie temporal (ej. solo acelerómetro o solo altitud/presión)."
+            )
+
+        # 6. Apilar horizontalmente: matriz 2D de dimensiones (timesteps, num_sensores)
+        muestra_2d = np.column_stack(canales)
+        data.append(muestra_2d)
+
+    return np.array(data, dtype=np.float32), np.array(tags, dtype=np.int32), activity
+
 
 class dataScaler:
     def __init__(self):

@@ -211,7 +211,7 @@ class NN(Model):
         ])
 
     def call(self, x):
-        return self.redCnn(x)
+        return self.modelNN(x)
 
 
 
