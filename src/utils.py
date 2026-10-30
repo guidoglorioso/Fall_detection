@@ -229,8 +229,13 @@ def extraer_datos_json(path, file='*.json', sensors=None):
                 raise KeyError(f"La clave '{sen}' no se encontró en {archivo}. Claves disponibles: {claves_disp}")
             canales.append(np.array(vals, dtype=np.float32))
 
-        # 5. Validar que las señales tengan la misma longitud
+        # 5. Validar que las señales no estén vacías y tengan la misma longitud
         longitudes = [len(c) for c in canales]
+        if any(l == 0 for l in longitudes):
+            raise ValueError(
+                f"El archivo '{os.path.basename(archivo)}' ({archivo}) contiene señales vacías (longitud 0): "
+                f"{dict(zip(resolved_sensors, longitudes))}."
+            )
         if len(set(longitudes)) > 1:
             raise ValueError(
                 f"Las señales solicitadas tienen diferentes longitudes {dict(zip(resolved_sensors, longitudes))} en {archivo}. "
@@ -241,7 +246,22 @@ def extraer_datos_json(path, file='*.json', sensors=None):
         muestra_2d = np.column_stack(canales)
         data.append(muestra_2d)
 
-    return np.array(data, dtype=np.float32), np.array(tags, dtype=np.int32), activity
+    try:
+        data_arr = np.array(data, dtype=np.float32)
+    except ValueError as e:
+        formas = [d.shape for d in data]
+        forma_mas_comun = max(set(formas), key=formas.count) if formas else None
+        incompatibles = [
+            f"{os.path.basename(lista_archivos[idx])} (forma {f})"
+            for idx, f in enumerate(formas) if f != forma_mas_comun
+        ]
+        incompatibles_str = ', '.join(incompatibles)
+        raise ValueError(
+            f"Error al apilar los datos en array 3D: dimensiones inhomogéneas detectadas. "
+            f"Forma esperada: {forma_mas_comun}. Archivos conflictivos: {incompatibles_str}."
+        ) from e
+
+    return data_arr, np.array(tags, dtype=np.int32), activity
 
 
 class dataScaler:
@@ -568,8 +588,6 @@ def extraer_features(señales):
     return matriz_features
 
 
-
-
 def graficar_distribucion_y_roc(y_reales, y_predichos_proba, bins=15):
     """
     Recibe etiquetas reales y probabilidades.
@@ -615,3 +633,4 @@ def graficar_distribucion_y_roc(y_reales, y_predichos_proba, bins=15):
     
     plt.tight_layout()
     plt.show()
+
